@@ -1,14 +1,3 @@
----
-
-# 📂 Repo Structure
-
-```
-stargold-proxy/
-├── server.py
-├── requirements.txt
-├── Procfile
-├── .gitignore
-└── README.md
 ```
 
 ## 📜 `README.md`
