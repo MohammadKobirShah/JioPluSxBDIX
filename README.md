@@ -1,6 +1,5 @@
 ## 📜 `README.md`
 
-```markdown
 # 🎬 Stargold Proxy (SOCKS5 Reverse Proxy for .m3u8)
 
 This project is a lightweight **reverse proxy** that fetches `.m3u8` video playlists through a **SOCKS5 proxy** and re-serves them via a Rails/Heroku‑style app URL for media players. Perfect for hosting on **Railway.app**.
