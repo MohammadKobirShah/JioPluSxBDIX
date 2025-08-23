@@ -6,6 +6,6 @@ __pycache__/
 .env
 .venv/
 
-# OS files
+# OS cruft
 .DS_Store
 Thumbs.db
