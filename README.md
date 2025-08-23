@@ -11,8 +11,6 @@ stargold-proxy/
 └── README.md
 ```
 
----
-
 ## 📜 `README.md`
 
 ```markdown
