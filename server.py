@@ -12,22 +12,19 @@ CACHE = {}            # simple cache { url: (timestamp, data, content_type) }
 
 async def fetch_stream(request, url, content_type="application/octet-stream"):
     """
-    Fetch content from upstream, stream it directly to client,
-    but also save .ts chunks in memory cache.
+    Proxy an upstream .ts (or similar asset) to the client,
+    stream chunks immediately (bufferless sending),
+    and cache the full segment optionally for re-use within CACHE_TTL.
     """
     now = time.time()
 
-    # ✅ If cached and fresh, serve instantly
+    # ✅ Serve from cache if available and fresh
     if url in CACHE:
         ts, data, ctype = CACHE[url]
         if (now - ts) < CACHE_TTL:
-            resp = web.StreamResponse(status=200, headers={"Content-Type": ctype})
-            await resp.prepare(request)
-            await resp.write(data)   # serve instantly
-            await resp.write_eof()
-            return resp
+            return web.Response(body=data, content_type=ctype)
 
-    # Otherwise: fetch from upstream
+    # ✅ Otherwise: fetch from upstream and stream to client
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as upstream:
@@ -35,27 +32,31 @@ async def fetch_stream(request, url, content_type="application/octet-stream"):
                 raise web.HTTPBadGateway(text=f"Upstream returned {upstream.status}")
 
             ctype = upstream.headers.get("Content-Type", content_type)
-            # Collect buffer while streaming
+            resp = web.StreamResponse(status=200, headers={"Content-Type": ctype})
+            await resp.prepare(request)
+
+            # buffer only if we want caching later
             buffer = bytearray()
 
-            stream_response = web.StreamResponse(
-                status=200,
-                headers={"Content-Type": ctype}
-            )
-            await stream_response.prepare(request)
-
             async for chunk in upstream.content.iter_chunked(CHUNK_SIZE):
-                buffer.extend(chunk)
-                await stream_response.write(chunk)
+                await resp.write(chunk)    # forward immediately (bufferless for client)
+                buffer.extend(chunk)       # keep local copy for cache
 
-            await stream_response.write_eof()
+            await resp.write_eof()
 
-            # Save in cache
+            # Save to cache and schedule automatic purge
             CACHE[url] = (now, bytes(buffer), ctype)
-            return stream_response
+            asyncio.create_task(_purge_cache_after(url, CACHE_TTL))
+            return resp
 
 
-# --- Playlist passthrough (no rewrite, cached if needed just as text) ---
+async def _purge_cache_after(url, ttl):
+    """Remove cache entry after TTL expires (fire-and-forget)."""
+    await asyncio.sleep(ttl)
+    CACHE.pop(url, None)
+
+
+# --- Playlist passthrough (no cache, bufferless text) ---
 async def playlist_handler(request):
     channel_id = request.match_info["channel_id"]
     remote_url = f"https://live.dinesh29.com.np/stream/jiotvplus/{channel_id}/stream_0.m3u8"
@@ -79,7 +80,7 @@ async def asset_handler(request):
     return await fetch_stream(request, remote_url, content_type="video/MP2T")
 
 
-# --- Setup app ---
+# --- Setup aiohttp application ---
 app = web.Application()
 app.router.add_get("/stream/{channel_id}/stream_0.m3u8", playlist_handler)
 app.router.add_get("/stream/{channel_id}/{filename}", asset_handler)
